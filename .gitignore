@@ -1,0 +1,11 @@
+# OS / Temporary files
+*.tmp
+*.bak
+*.bak_*
+tmp_*.txt
+result_*.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
