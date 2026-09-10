@@ -39,20 +39,21 @@ A high-performance, interactive Linux Bash utility that benchmarks **Iranian** a
 You can run `repo-setter` immediately on any Linux server with a single command without git cloning:
 
 ### 🌟 1. Interactive Menu (Recommended)
-Run the full interactive menu directly from GitHub:
+Run the full interactive menu directly with a single command:
 
+#### Direct from GitHub:
 ```bash
 curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash
 ```
 
-Or using process substitution:
+#### 🇮🇷 High-Speed CDN (Bypasses `raw.githubusercontent.com` SSL/DNS restrictions in Iran):
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh)
+curl -sSL https://cdn.jsdelivr.net/gh/samaelleo/repo-setter@main/repo-setter.sh | sudo bash
 ```
 
-Or with `wget`:
+Or using `wget`:
 ```bash
-wget -qO- https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash
+wget -qO- https://cdn.jsdelivr.net/gh/samaelleo/repo-setter@main/repo-setter.sh | sudo bash
 ```
 
 ### ⚡ 2. Automated Non-Interactive One-Liners
