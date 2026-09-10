@@ -140,18 +140,19 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
    [6] Benchmark All & Choose from Combined List
 
   ─── DOCKER & DEVELOPER TOOLS (IRAN OPTIMIZED) ───
-   [7] Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)
+   [7] Benchmark DNS to Unblock get.docker.com (Shecan, 403, Electro, etc.)
    [8] Install Docker CE & Tools (Sanction-Free for Iran)
    [9] Benchmark & Configure Docker Registry Mirrors (/etc/docker/daemon.json)
+   [10] Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)
 
   ─── MAINTENANCE & TOOLS ───
-   [10] View Current sources.list & Active Mirrors
-   [11] Restore sources.list from Backup
-   [12] Run 'apt-get update'
+   [11] View Current sources.list & Active Mirrors
+   [12] Restore sources.list from Backup
+   [13] Run 'apt-get update'
 
    [0] Exit
   ─────────────────────────────────────────────────────────────────────────────
- Please select an option [0-12]:
+ Please select an option [0-13]:
 ```
 
 ---
@@ -165,7 +166,8 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
 | `-i`, `--iran` | Benchmark Iranian mirrors and auto-set the fastest |
 | `-g`, `--global` | Benchmark International mirrors and auto-set the fastest |
 | `-a`, `--all` | Benchmark All mirrors (Iran & Global) and auto-set the fastest |
-| `-f`, `--fix-dns` | Fix DNS poisoning & SSL (60) for get.docker.com & GitHub |
+| `-t`, `--test-dns` | Benchmark Anti-Sanction DNS providers to unblock `get.docker.com` |
+| `-f`, `--fix-dns` | Fix DNS poisoning & SSL (60) for get.docker.com & GitHub (/etc/hosts) |
 | `-d`, `--docker` | Install Docker CE & configure Iran registry mirrors |
 | `-m`, `--docker-mirrors` | Benchmark & configure Docker Hub registry mirrors |
 | `-s`, `--status` | View currently active repository configuration |
@@ -179,6 +181,9 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
 ```bash
 # Benchmark and auto-set the fastest Iranian mirror
 sudo ./repo-setter.sh --iran
+
+# Test which Anti-Sanction DNS unblocks get.docker.com and install Docker
+sudo ./repo-setter.sh --test-dns
 
 # Fix SSL error 60 for get.docker.com and GitHub
 sudo ./repo-setter.sh --fix-dns

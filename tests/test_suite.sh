@@ -56,6 +56,7 @@ test_cli_flags() {
     assert_contains "$help_out" "Usage:" "Help output contains Usage"
     assert_contains "$help_out" "--iran" "Help output mentions --iran"
     assert_contains "$help_out" "--global" "Help output mentions --global"
+    assert_contains "$help_out" "--test-dns" "Help output mentions --test-dns"
     assert_contains "$help_out" "(v${SCRIPT_VERSION})" "Help output contains correct script version v${SCRIPT_VERSION}"
 
     local ver_out

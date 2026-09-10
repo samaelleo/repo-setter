@@ -874,6 +874,154 @@ action_run_apt_update() {
     pause_key
 }
 
+action_test_dns_for_docker() {
+    if ! check_root; then
+        pause_key
+        return
+    fi
+
+    echo ""
+    log_info "=== Testing Anti-Sanction DNS Servers for get.docker.com ==="
+    echo -e " ${C_DIM}Benchmarks DNS servers to find which one unblocks official Docker installer (get.docker.com).${C_RESET}"
+    echo ""
+
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+
+    local original_resolv="${BACKUP_DIR}/resolv.conf.bak_${timestamp}"
+    if [ -f /etc/resolv.conf ]; then
+        cp /etc/resolv.conf "$original_resolv"
+        log_info "Original DNS backed up to: ${C_WHITE}${original_resolv}${C_RESET}"
+    fi
+
+    local dns_providers=(
+        "Shecan (شکن)|178.22.122.100|185.51.200.2"
+        "403.online (۴۰۳)|10.202.10.202|10.202.10.102"
+        "Electro (الکترو)|78.157.42.100|78.157.42.101"
+        "Radar Game (رادار)|10.202.10.10|10.202.10.11"
+        "Begzar (بگذر)|185.55.226.26|185.55.225.25"
+        "Shelter DNS|185.87.122.181|185.87.122.182"
+        "Cloudflare|1.1.1.1|1.0.0.1"
+        "Google|8.8.8.8|8.8.4.4"
+    )
+
+    local working_dns=()
+
+    echo ""
+    echo -e " ${C_BOLD}Testing DNS providers against 'https://get.docker.com'...${C_RESET}"
+    echo ""
+
+    echo -e "  ┌──────────────────────────┬─────────────────────────────┬──────────────────┬──────────────┐"
+    printf "  │ ${C_BOLD}%-24s${C_RESET} │ ${C_BOLD}%-27s${C_RESET} │ ${C_BOLD}%-16s${C_RESET} │ ${C_BOLD}%-12s${C_RESET} │\n" "Provider Name" "DNS IPs" "get.docker.com" "Latency"
+    echo -e "  ├──────────────────────────┼─────────────────────────────┼──────────────────┼──────────────┤"
+
+    for entry in "${dns_providers[@]}"; do
+        IFS="|" read -r pname ip1 ip2 <<< "$entry"
+
+        # Temporarily apply DNS
+        cat << EOF > /etc/resolv.conf
+nameserver ${ip1}
+nameserver ${ip2}
+EOF
+
+        # Probe get.docker.com with curl
+        local start_ts
+        start_ts="$(date +%s%N 2>/dev/null || date +%s)"
+        local curl_out
+        curl_out="$(curl -s -L --connect-timeout 3 --max-time 6 https://get.docker.com 2>/dev/null)"
+        local end_ts
+        end_ts="$(date +%s%N 2>/dev/null || date +%s)"
+
+        local latency_ms="--"
+        if [ ${#start_ts} -gt 10 ] && [ ${#end_ts} -gt 10 ]; then
+            latency_ms="$(( (end_ts - start_ts) / 1000000 )) ms"
+        fi
+
+        local first_line
+        first_line="$(echo "$curl_out" | head -n 1)"
+
+        local status_label=""
+        local status_color=""
+
+        if [[ "$first_line" == *"#!/bin/sh"* ]] || [[ "$first_line" == *"#!"* ]]; then
+            status_label="UNBLOCKED"
+            status_color="${C_GREEN}"
+            working_dns+=("${pname}|${ip1}|${ip2}")
+        elif [[ "$first_line" == *"<!"* ]] || [[ "$first_line" == *"403"* ]] || [[ "$curl_out" == *"Forbidden"* ]]; then
+            status_label="SANCTIONED(403)"
+            status_color="${C_RED}"
+        else
+            status_label="UNREACHABLE"
+            status_color="${C_RED}"
+        fi
+
+        printf "  │ %-24s │ %-27s │ ${status_color}%-16s${C_RESET} │ %-12s │\n" \
+            "$pname" "${ip1}, ${ip2}" "$status_label" "$latency_ms"
+    done
+    echo -e "  └──────────────────────────┴─────────────────────────────┴──────────────────┴──────────────┘"
+
+    echo ""
+    if [ ${#working_dns[@]} -eq 0 ]; then
+        log_error "None of the tested DNS servers could unblock get.docker.com directly."
+        log_info "Restoring original DNS..."
+        cp "$original_resolv" /etc/resolv.conf 2>/dev/null || true
+        echo ""
+        log_info "Recommendation: Use Option [8] (Install Docker via apt repository mirror) instead."
+        pause_key
+        return 1
+    fi
+
+    log_success "Found ${#working_dns[@]} working DNS server(s) that successfully unblock get.docker.com!"
+    
+    local best_dns="${working_dns[0]}"
+    IFS="|" read -r bname bip1 bip2 <<< "$best_dns"
+    echo ""
+    echo -e " ${C_BOLD}Best Working DNS:${C_RESET} ${C_GREEN}${bname}${C_RESET} (${bip1}, ${bip2})"
+    echo ""
+
+    read_user_input " Set this DNS permanently in /etc/resolv.conf? [Y/n]: " set_perm
+    set_perm="${set_perm:-Y}"
+    if [[ "$set_perm" =~ ^[Yy]$ ]]; then
+        cat << EOF > /etc/resolv.conf
+# Configured by Repo-Setter (${bname} Anti-Sanction DNS)
+nameserver ${bip1}
+nameserver ${bip2}
+nameserver 8.8.8.8
+EOF
+        log_success "/etc/resolv.conf updated with ${bname} DNS!"
+    else
+        log_info "Restoring original DNS..."
+        cp "$original_resolv" /etc/resolv.conf 2>/dev/null || true
+        pause_key
+        return 0
+    fi
+
+    echo ""
+    read_user_input " Do you want to run 'bash <(curl -sSL https://get.docker.com)' now? [Y/n]: " run_installer
+    run_installer="${run_installer:-Y}"
+    if [[ "$run_installer" =~ ^[Yy]$ ]]; then
+        echo ""
+        log_info "Executing official Docker installer script with ${bname} DNS..."
+        if curl -fsSL https://get.docker.com | bash; then
+            echo ""
+            log_success "Docker installed successfully via get.docker.com!"
+            
+            echo ""
+            read_user_input " Would you also like to configure Iran Registry Mirrors in /etc/docker/daemon.json? [Y/n]: " conf_reg
+            conf_reg="${conf_reg:-Y}"
+            if [[ "$conf_reg" =~ ^[Yy]$ ]]; then
+                action_configure_docker_mirrors
+            fi
+        else
+            echo ""
+            log_error "Installation failed. You can alternatively use Option [8] to install Docker via apt mirror."
+        fi
+    fi
+
+    pause_key
+}
+
 action_fix_dns_poisoning() {
     if ! check_root; then
         pause_key
@@ -1151,18 +1299,19 @@ interactive_menu() {
         echo -e "   ${C_CYAN}[6]${C_RESET} Benchmark All & Choose from Combined List"
         echo ""
         echo -e "  ${C_BOLD}${C_CYAN}─── DOCKER & DEVELOPER TOOLS (IRAN OPTIMIZED) ───${C_RESET}"
-        echo -e "   ${C_CYAN}[7]${C_RESET} Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)"
+        echo -e "   ${C_CYAN}[7]${C_RESET} Benchmark DNS to Unblock get.docker.com (Shecan, 403, Electro, etc.)"
         echo -e "   ${C_CYAN}[8]${C_RESET} Install Docker CE & Tools (Sanction-Free for Iran)"
         echo -e "   ${C_CYAN}[9]${C_RESET} Benchmark & Configure Docker Registry Mirrors (/etc/docker/daemon.json)"
+        echo -e "   ${C_CYAN}[10]${C_RESET} Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)"
         echo ""
         echo -e "  ${C_BOLD}${C_YELLOW}─── MAINTENANCE & TOOLS ───${C_RESET}"
-        echo -e "   ${C_CYAN}[10]${C_RESET} View Current sources.list & Active Mirrors"
-        echo -e "   ${C_CYAN}[11]${C_RESET} Restore sources.list from Backup"
-        echo -e "   ${C_CYAN}[12]${C_RESET} Run 'apt-get update'"
+        echo -e "   ${C_CYAN}[11]${C_RESET} View Current sources.list & Active Mirrors"
+        echo -e "   ${C_CYAN}[12]${C_RESET} Restore sources.list from Backup"
+        echo -e "   ${C_CYAN}[13]${C_RESET} Run 'apt-get update'"
         echo ""
         echo -e "   ${C_RED}[0]${C_RESET} Exit"
         echo -e "  ─────────────────────────────────────────────────────────────────────────────"
-        read_user_input " Please select an option [0-12]: " opt
+        read_user_input " Please select an option [0-13]: " opt
 
         case "$opt" in
             1) action_auto_set_fastest "iran" ;;
@@ -1171,12 +1320,13 @@ interactive_menu() {
             4) action_select_manually "international" ;;
             5) action_auto_set_fastest "all" ;;
             6) action_select_manually "all" ;;
-            7) action_fix_dns_poisoning ;;
+            7) action_test_dns_for_docker ;;
             8) action_install_docker ;;
             9) action_configure_docker_mirrors ;;
-            10) action_view_current_sources ;;
-            11) action_restore_backup ;;
-            12) action_run_apt_update ;;
+            10) action_fix_dns_poisoning ;;
+            11) action_view_current_sources ;;
+            12) action_restore_backup ;;
+            13) action_run_apt_update ;;
             0)
                 echo ""
                 echo -e " ${C_GREEN}Goodbye!${C_RESET}"
@@ -1184,7 +1334,7 @@ interactive_menu() {
                 exit 0
                 ;;
             *)
-                log_error "Invalid option '$opt'. Please enter a number between 0 and 12."
+                log_error "Invalid option '$opt'. Please enter a number between 0 and 13."
                 sleep 1.5
                 ;;
         esac
@@ -1205,6 +1355,7 @@ Options:
   -i, --iran          Benchmark Iranian mirrors and auto-set the fastest
   -g, --global        Benchmark International mirrors and auto-set the fastest
   -a, --all           Benchmark All mirrors (Iran & Global) and auto-set fastest
+  -t, --test-dns      Benchmark Anti-Sanction DNS to unblock get.docker.com
   -f, --fix-dns       Fix DNS poisoning & SSL (60) for get.docker.com and GitHub
   -d, --docker        Install Docker CE & configure Iran registry mirrors
   -m, --docker-mirrors Benchmark & configure Docker Hub registry mirrors
@@ -1221,7 +1372,7 @@ Interactive Mode:
 Examples:
   sudo ./repo-setter.sh               # Open interactive menu
   sudo ./repo-setter.sh --iran        # Auto-set fastest Iran mirror non-interactively
-  sudo ./repo-setter.sh --fix-dns     # Fix SSL error 60 for get.docker.com & GitHub
+  sudo ./repo-setter.sh --test-dns    # Test which DNS unblocks get.docker.com
   sudo ./repo-setter.sh --docker      # Install Docker with Iran registry mirrors
 EOF
 }
@@ -1245,6 +1396,9 @@ main() {
                 ;;
             -a|--all)
                 action_auto_set_fastest "all"
+                ;;
+            -t|--test-dns)
+                action_test_dns_for_docker
                 ;;
             -f|--fix-dns)
                 action_fix_dns_poisoning
