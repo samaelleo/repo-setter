@@ -51,6 +51,11 @@ curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-sett
 curl -sSL https://cdn.jsdelivr.net/gh/samaelleo/repo-setter@main/repo-setter.sh | sudo bash
 ```
 
+Or download and execute in one line:
+```bash
+curl -sSL https://cdn.jsdelivr.net/gh/samaelleo/repo-setter@main/repo-setter.sh -o repo-setter.sh && sudo bash repo-setter.sh
+```
+
 Or using `wget`:
 ```bash
 wget -qO- https://cdn.jsdelivr.net/gh/samaelleo/repo-setter@main/repo-setter.sh | sudo bash
