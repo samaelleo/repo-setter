@@ -42,17 +42,17 @@ You can run `repo-setter` immediately on any Linux server with a single command 
 Run the full interactive menu directly from GitHub:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash
 ```
 
 Or using process substitution:
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh)
 ```
 
 Or with `wget`:
 ```bash
-wget -qO- https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash
 ```
 
 ### ⚡ 2. Automated Non-Interactive One-Liners
@@ -60,22 +60,22 @@ Benchmark and automatically set the fastest mirror directly with a one-liner:
 
 - **Auto-Set Fastest Iranian Mirror**:
   ```bash
-  curl -sSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | sudo bash -s -- --iran
+  curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash -s -- --iran
   ```
 
 - **Auto-Set Fastest International Mirror**:
   ```bash
-  curl -sSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | sudo bash -s -- --global
+  curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash -s -- --global
   ```
 
 - **Auto-Set Fastest Overall (Iran & Global)**:
   ```bash
-  curl -sSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | sudo bash -s -- --all
+  curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | sudo bash -s -- --all
   ```
 
 - **Inspect Current Active Repositories**:
   ```bash
-  curl -sSL https://raw.githubusercontent.com/your-username/repo-setter/main/repo-setter.sh | bash -s -- --status
+  curl -sSL https://raw.githubusercontent.com/samaelleo/repo-setter/main/repo-setter.sh | bash -s -- --status
   ```
 
 ---
@@ -84,7 +84,7 @@ Benchmark and automatically set the fastest mirror directly with a one-liner:
 
 1. **Clone or download the repository**:
    ```bash
-   git clone https://github.com/your-username/repo-setter.git
+   git clone https://github.com/samaelleo/repo-setter.git
    cd repo-setter
    ```
 
