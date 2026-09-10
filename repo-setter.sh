@@ -812,7 +812,7 @@ action_restore_backup() {
     local backups=()
     while IFS= read -r -d $'\0' file; do
         backups+=("$file")
-    done < <(find "$BACKUP_DIR" /etc/apt/ -maxdepth 1 \( -name "*sources*bak*" -o -name "*sources*disabled*" \) -print0 2>/dev/null | sort -z -r)
+    done < <(find "$BACKUP_DIR" /etc/apt/ -maxdepth 1 \( -name "*sources*bak*" -o -name "*sources*disabled*" -o -name "*resolv*bak*" -o -name "*resolved*bak*" -o -name "*.yaml.bak*" -o -name "*.yml.bak*" \) -print0 2>/dev/null | sort -z -r)
 
     if [ ${#backups[@]} -eq 0 ]; then
         log_warning "No backups found in ${BACKUP_DIR}/ or /etc/apt/"
@@ -853,6 +853,21 @@ action_restore_backup() {
         log_info "Restoring deb822: ${selected_backup} -> ${UBUNTU_SOURCES_DEB822}"
         cp "$selected_backup" "$UBUNTU_SOURCES_DEB822"
         chmod 644 "$UBUNTU_SOURCES_DEB822"
+    elif [[ "$bname" == *resolv.conf* ]]; then
+        log_info "Restoring DNS: ${selected_backup} -> /etc/resolv.conf"
+        cp "$selected_backup" /etc/resolv.conf
+    elif [[ "$bname" == *.yaml.bak_* ]] || [[ "$bname" == *.yml.bak_* ]]; then
+        local original_netplan_name="${bname%%.bak_*}"
+        log_info "Restoring Netplan: ${selected_backup} -> /etc/netplan/${original_netplan_name}"
+        cp "$selected_backup" "/etc/netplan/${original_netplan_name}"
+        if command -v netplan >/dev/null 2>&1; then
+            netplan apply 2>/dev/null || true
+            log_success "Netplan applied successfully!"
+        fi
+    elif [[ "$bname" == *resolved.conf* ]]; then
+        log_info "Restoring systemd-resolved: ${selected_backup} -> /etc/systemd/resolved.conf"
+        cp "$selected_backup" /etc/systemd/resolved.conf
+        systemctl restart systemd-resolved 2>/dev/null || true
     else
         log_info "Restoring: ${selected_backup} -> ${SOURCES_FILE}"
         cp "$selected_backup" "$SOURCES_FILE"
@@ -872,6 +887,225 @@ action_run_apt_update() {
     log_info "Executing: apt-get update..."
     apt-get update
     pause_key
+}
+
+update_single_netplan_yaml() {
+    local filepath="$1"
+    local ip1="$2"
+    local ip2="$3"
+    local ip3="${4:-8.8.8.8}"
+
+    if [ ! -f "$filepath" ]; then
+        return 1
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$filepath" "$ip1" "$ip2" "$ip3" << 'PYEOF' >/dev/null 2>&1
+import sys, re
+
+filepath = sys.argv[1]
+ip1 = sys.argv[2]
+ip2 = sys.argv[3]
+ip3 = sys.argv[4]
+
+with open(filepath, 'r') as f:
+    content = f.read()
+
+done = False
+try:
+    import yaml
+    data = yaml.safe_load(content)
+    if isinstance(data, dict) and 'network' in data:
+        net = data.get('network', {})
+        for sec in ['ethernets', 'wifis', 'vlans', 'bridges', 'bonds']:
+            if sec in net and isinstance(net[sec], dict):
+                for iface, cfg in net[sec].items():
+                    if isinstance(cfg, dict):
+                        if 'nameservers' not in cfg or not isinstance(cfg['nameservers'], dict):
+                            cfg['nameservers'] = {}
+                        cfg['nameservers']['addresses'] = [ip1, ip2, ip3]
+                        done = True
+        if done:
+            with open(filepath, 'w') as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+except Exception:
+    pass
+
+if not done:
+    lines = content.splitlines()
+    indent_step = 2
+    for line in lines:
+        leading = len(line) - len(line.lstrip(' '))
+        if leading > 0:
+            if leading % 4 == 0 and leading % 2 == 0:
+                indent_step = 4
+                break
+            elif leading % 2 == 0:
+                indent_step = 2
+                break
+
+    new_lines = []
+    in_nameservers = False
+    ns_indent = -1
+    found_ns = False
+
+    for i, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip(' '))
+        stripped = line.strip()
+
+        if in_nameservers:
+            if indent > ns_indent:
+                if stripped.startswith('addresses:'):
+                    continue
+                elif stripped.startswith('-') and not stripped.startswith('--'):
+                    continue
+                else:
+                    new_lines.append(line)
+                    continue
+            else:
+                in_nameservers = False
+
+        if re.match(r'^\s*nameservers\s*:\s*$', line):
+            found_ns = True
+            in_nameservers = True
+            ns_indent = indent
+            child_indent = indent + indent_step
+            if i + 1 < len(lines):
+                next_indent = len(lines[i + 1]) - len(lines[i + 1].lstrip(' '))
+                if next_indent > indent:
+                    child_indent = next_indent
+            new_lines.append(line)
+            new_lines.append(' ' * child_indent + f'addresses: [{ip1}, {ip2}, {ip3}]')
+            continue
+
+        new_lines.append(line)
+
+    if not found_ns:
+        final_lines = []
+        inserted = False
+        in_eth = False
+        eth_indent = -1
+        first_iface_found = False
+
+        for line in new_lines:
+            indent = len(line) - len(line.lstrip(' '))
+            stripped = line.strip()
+            final_lines.append(line)
+
+            if re.match(r'^\s*ethernets\s*:\s*$', line):
+                in_eth = True
+                eth_indent = indent
+                continue
+
+            if in_eth and not inserted:
+                if indent > eth_indent and stripped.endswith(':') and not stripped.startswith('#'):
+                    if not first_iface_found:
+                        first_iface_found = True
+                        prop_indent = indent + indent_step
+                        p_str = ' ' * prop_indent
+                        c_str = ' ' * (prop_indent + indent_step)
+                        final_lines.append(f'{p_str}nameservers:')
+                        final_lines.append(f'{c_str}addresses: [{ip1}, {ip2}, {ip3}]')
+                        inserted = True
+
+        result = '\n'.join(final_lines) + '\n'
+    else:
+        result = '\n'.join(new_lines) + '\n'
+
+    with open(filepath, 'w') as f:
+        f.write(result)
+PYEOF
+        return 0
+    else
+        if grep -q "nameservers:" "$filepath"; then
+            sed -i -E "s/(addresses:).*/\1 [${ip1}, ${ip2}, ${ip3}]/" "$filepath"
+        fi
+        return 0
+    fi
+}
+
+apply_persistent_dns() {
+    local pname="$1"
+    local ip1="$2"
+    local ip2="$3"
+    local ip3="${4:-8.8.8.8}"
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+
+    mkdir -p "$BACKUP_DIR"
+
+    # 1. Update /etc/resolv.conf for instant effect
+    if [ -f /etc/resolv.conf ] || [ -L /etc/resolv.conf ]; then
+        cp /etc/resolv.conf "${BACKUP_DIR}/resolv.conf.bak_${timestamp}" 2>/dev/null || true
+        cat << EOF > /etc/resolv.conf
+# Configured by Repo-Setter (${pname} Anti-Sanction DNS)
+nameserver ${ip1}
+nameserver ${ip2}
+nameserver ${ip3}
+EOF
+        log_success "/etc/resolv.conf updated with ${pname} DNS for instant resolution!"
+    fi
+
+    # 2. Netplan Detection & Configuration (/etc/netplan/*.yaml)
+    local netplan_configs=()
+    if [ -d /etc/netplan ]; then
+        while IFS= read -r -d '' f; do
+            local fbname
+            fbname="$(basename "$f")"
+            if [[ "$fbname" != *.bak* ]] && [[ "$fbname" != *~* ]] && [[ "$fbname" != *.disabled* ]]; then
+                netplan_configs+=("$f")
+            fi
+        done < <(find /etc/netplan -maxdepth 1 \( -name "*.yaml" -o -name "*.yml" \) -print0 2>/dev/null)
+    fi
+
+    if [ ${#netplan_configs[@]} -gt 0 ]; then
+        echo ""
+        log_info "Detected Netplan network configuration (${#netplan_configs[@]} file(s) found in /etc/netplan/)..."
+        for nfile in "${netplan_configs[@]}"; do
+            local nbak="${BACKUP_DIR}/$(basename "$nfile").bak_${timestamp}"
+            cp "$nfile" "$nbak" 2>/dev/null || true
+            log_info "Backing up Netplan to: ${C_WHITE}${nbak}${C_RESET}"
+
+            update_single_netplan_yaml "$nfile" "$ip1" "$ip2" "$ip3"
+
+            if command -v netplan >/dev/null 2>&1; then
+                if netplan generate 2>/dev/null; then
+                    netplan apply 2>/dev/null || true
+                    log_success "Netplan updated and applied: $(basename "$nfile")"
+                else
+                    log_warning "Netplan syntax verification failed for $(basename "$nfile"). Restoring original file..."
+                    cp "$nbak" "$nfile"
+                fi
+            else
+                log_success "Netplan file updated: $(basename "$nfile")"
+            fi
+        done
+    fi
+
+    # 3. systemd-resolved Configuration (/etc/systemd/resolved.conf)
+    if [ -f /etc/systemd/resolved.conf ]; then
+        local rbak="${BACKUP_DIR}/resolved.conf.bak_${timestamp}"
+        cp /etc/systemd/resolved.conf "$rbak" 2>/dev/null || true
+
+        if grep -q -E "^[#]?[ ]*DNS=" /etc/systemd/resolved.conf; then
+            sed -i -E "s/^[#]?[ ]*DNS=.*/DNS=${ip1} ${ip2} ${ip3}/" /etc/systemd/resolved.conf
+        else
+            sed -i "/^\[Resolve\]/a DNS=${ip1} ${ip2} ${ip3}" /etc/systemd/resolved.conf
+        fi
+
+        if command -v resolvectl >/dev/null 2>&1; then
+            local def_iface
+            def_iface="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)"
+            if [ -n "$def_iface" ]; then
+                resolvectl dns "$def_iface" "${ip1}" "${ip2}" "${ip3}" 2>/dev/null || true
+            fi
+        fi
+
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl restart systemd-resolved 2>/dev/null || true
+        fi
+        log_success "systemd-resolved updated with ${pname} DNS!"
+    fi
 }
 
 action_test_dns_for_docker() {
@@ -992,16 +1226,10 @@ EOF
     echo -e " ${C_BOLD}Fastest Working DNS:${C_RESET} ${C_GREEN}${bname}${C_RESET} (${bip1}, ${bip2}) [${blat} ms]"
     echo ""
 
-    read_user_input " Set this DNS permanently in /etc/resolv.conf? [Y/n]: " set_perm
+    read_user_input " Set this DNS permanently (resolv.conf & Netplan)? [Y/n]: " set_perm
     set_perm="${set_perm:-Y}"
     if [[ "$set_perm" =~ ^[Yy]$ ]]; then
-        cat << EOF > /etc/resolv.conf
-# Configured by Repo-Setter (${bname} Anti-Sanction DNS)
-nameserver ${bip1}
-nameserver ${bip2}
-nameserver 8.8.8.8
-EOF
-        log_success "/etc/resolv.conf updated with ${bname} DNS!"
+        apply_persistent_dns "${bname}" "${bip1}" "${bip2}"
     else
         log_info "Restoring original DNS..."
         cp "$original_resolv" /etc/resolv.conf 2>/dev/null || true
@@ -1104,19 +1332,9 @@ EOF
     fi
 
     echo ""
-    read_user_input " Would you also like to configure Anti-Sanction DNS (Shecan / 403.online)? [y/N]: " set_dns
+    read_user_input " Would you also like to configure Anti-Sanction DNS (Shecan & 403 in Netplan/resolv.conf)? [y/N]: " set_dns
     if [[ "$set_dns" =~ ^[Yy]$ ]]; then
-        if [ -f /etc/resolv.conf ]; then
-            cp /etc/resolv.conf "${BACKUP_DIR}/resolv.conf.bak_${timestamp}" 2>/dev/null || true
-            cat << 'EOF' > /etc/resolv.conf
-# Configured by Repo-Setter (Shecan & 403.online Anti-Sanction DNS)
-nameserver 178.22.122.100
-nameserver 185.51.200.2
-nameserver 10.202.10.202
-nameserver 8.8.8.8
-EOF
-            log_success "/etc/resolv.conf configured with Anti-Sanction DNS servers!"
-        fi
+        apply_persistent_dns "Shecan & 403.online" "178.22.122.100" "185.51.200.2" "10.202.10.202"
     fi
 
     pause_key

@@ -178,6 +178,48 @@ test_mirror_lists() {
 }
 
 # ------------------------------------------------------------------------------
+# Test 7: Netplan DNS Configuration
+# ------------------------------------------------------------------------------
+test_netplan_dns_configuration() {
+    echo -e "\n${C_BLUE}--- Testing Netplan DNS Configuration ---${C_RESET}"
+    local tmp_yaml
+    tmp_yaml="$(mktemp 2>/dev/null || echo "/tmp/test_netplan_$$.yaml")"
+
+    # Case 1: Netplan without nameservers
+    cat << 'EOF' > "$tmp_yaml"
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+EOF
+    update_single_netplan_yaml "$tmp_yaml" "178.22.122.100" "185.51.200.2" "8.8.8.8"
+    local c1_out
+    c1_out="$(cat "$tmp_yaml")"
+    assert_contains "$c1_out" "nameservers:" "Netplan adds nameservers block when missing"
+    assert_contains "$c1_out" "178.22.122.100" "Netplan sets primary DNS"
+    assert_contains "$c1_out" "185.51.200.2" "Netplan sets secondary DNS"
+
+    # Case 2: Netplan with existing nameservers
+    cat << 'EOF' > "$tmp_yaml"
+network:
+  version: 2
+  ethernets:
+    ens3:
+      dhcp4: true
+      nameservers:
+        addresses: [1.1.1.1, 8.8.4.4]
+EOF
+    update_single_netplan_yaml "$tmp_yaml" "10.202.10.202" "10.202.10.102" "8.8.8.8"
+    local c2_out
+    c2_out="$(cat "$tmp_yaml")"
+    assert_contains "$c2_out" "10.202.10.202" "Netplan updates existing nameserver addresses (403.online primary)"
+    assert_contains "$c2_out" "10.202.10.102" "Netplan updates existing nameserver addresses (403.online secondary)"
+
+    rm -f "$tmp_yaml"
+}
+
+# ------------------------------------------------------------------------------
 # Run all tests
 # ------------------------------------------------------------------------------
 main() {
@@ -187,6 +229,7 @@ main() {
     test_debian_sources_gen
     test_live_probe
     test_mirror_lists
+    test_netplan_dns_configuration
 
     echo ""
     echo "========================================"
