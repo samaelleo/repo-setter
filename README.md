@@ -139,14 +139,19 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
    [5] Benchmark All (Iran & International) & Auto-Set Fastest
    [6] Benchmark All & Choose from Combined List
 
+  ─── DOCKER & DEVELOPER TOOLS (IRAN OPTIMIZED) ───
+   [7] Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)
+   [8] Install Docker CE & Tools (Sanction-Free for Iran)
+   [9] Benchmark & Configure Docker Registry Mirrors (/etc/docker/daemon.json)
+
   ─── MAINTENANCE & TOOLS ───
-   [7] View Current sources.list & Active Mirrors
-   [8] Restore sources.list from Backup
-   [9] Run 'apt-get update'
+   [10] View Current sources.list & Active Mirrors
+   [11] Restore sources.list from Backup
+   [12] Run 'apt-get update'
 
    [0] Exit
   ─────────────────────────────────────────────────────────────────────────────
- Please select an option [0-9]:
+ Please select an option [0-12]:
 ```
 
 ---
@@ -160,7 +165,10 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
 | `-i`, `--iran` | Benchmark Iranian mirrors and auto-set the fastest |
 | `-g`, `--global` | Benchmark International mirrors and auto-set the fastest |
 | `-a`, `--all` | Benchmark All mirrors (Iran & Global) and auto-set the fastest |
-| `-s`, `--status` | View currently active `/etc/apt/sources.list` configuration |
+| `-f`, `--fix-dns` | Fix DNS poisoning & SSL (60) for get.docker.com & GitHub |
+| `-d`, `--docker` | Install Docker CE & configure Iran registry mirrors |
+| `-m`, `--docker-mirrors` | Benchmark & configure Docker Hub registry mirrors |
+| `-s`, `--status` | View currently active repository configuration |
 | `-r`, `--restore` | Interactively select and restore a previous backup |
 | `-u`, `--update` | Execute `apt-get update` |
 | `-h`, `--help` | Show command-line help and usage |
@@ -172,11 +180,11 @@ When executed without flags, `repo-setter` greets you with an intuitive terminal
 # Benchmark and auto-set the fastest Iranian mirror
 sudo ./repo-setter.sh --iran
 
-# Benchmark and auto-set the fastest international mirror
-sudo ./repo-setter.sh --global
+# Fix SSL error 60 for get.docker.com and GitHub
+sudo ./repo-setter.sh --fix-dns
 
-# Inspect active sources configuration
-./repo-setter.sh --status
+# Install Docker with Iran registry mirrors in one step
+sudo ./repo-setter.sh --docker
 ```
 
 ---

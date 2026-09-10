@@ -874,6 +874,256 @@ action_run_apt_update() {
     pause_key
 }
 
+action_fix_dns_poisoning() {
+    if ! check_root; then
+        pause_key
+        return
+    fi
+
+    echo ""
+    log_info "=== Fixing DNS Poisoning & SSL Error (60) for get.docker.com & GitHub ==="
+    echo -e " ${C_DIM}Directly binds verified CloudFront & Fastly IPs to bypass Iranian ISP DNS poisoning.${C_RESET}"
+    echo ""
+
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+
+    if [ -f /etc/hosts ]; then
+        cp /etc/hosts "${BACKUP_DIR}/hosts.bak_${timestamp}"
+        log_info "Backup of /etc/hosts saved to: ${C_WHITE}${BACKUP_DIR}/hosts.bak_${timestamp}${C_RESET}"
+    fi
+
+    # Filter out any old or conflicting entries
+    local tmp_hosts
+    tmp_hosts="$(mktemp 2>/dev/null || echo "/tmp/hosts_new.tmp")"
+    grep -v -E "(raw\.githubusercontent\.com|get\.docker\.com|download\.docker\.com|github\.com)" /etc/hosts > "$tmp_hosts" 2>/dev/null || cat /etc/hosts > "$tmp_hosts"
+
+    cat << 'EOF' >> "$tmp_hosts"
+
+# -------------------------------------------------------------
+# Added by Repo-Setter: Anti-Censorship & Anti-Sanction Hosts
+# Fixes curl (60) SSL errors on get.docker.com and GitHub in Iran
+# -------------------------------------------------------------
+185.199.108.133 raw.githubusercontent.com
+185.199.109.133 raw.githubusercontent.com
+185.199.110.133 raw.githubusercontent.com
+185.199.111.133 raw.githubusercontent.com
+140.82.121.3    github.com
+140.82.121.4    github.com
+3.160.132.12    get.docker.com
+13.35.166.19    get.docker.com
+99.86.159.87    download.docker.com
+13.35.166.111   download.docker.com
+# -------------------------------------------------------------
+EOF
+
+    cp "$tmp_hosts" /etc/hosts
+    chmod 644 /etc/hosts
+    rm -f "$tmp_hosts"
+
+    log_success "/etc/hosts updated with verified direct IPs!"
+
+    # Probe get.docker.com
+    echo ""
+    log_info "Testing reachability to 'https://get.docker.com'..."
+    local docker_code
+    docker_code="$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 https://get.docker.com 2>/dev/null || echo "000")"
+    if [ "$docker_code" = "200" ]; then
+        log_success "https://get.docker.com is now REACHABLE (HTTP ${docker_code}) without SSL errors!"
+    else
+        log_warning "https://get.docker.com returned HTTP ${docker_code}."
+    fi
+
+    # Probe raw.githubusercontent.com
+    log_info "Testing reachability to 'https://raw.githubusercontent.com'..."
+    local github_code
+    github_code="$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 https://raw.githubusercontent.com 2>/dev/null || echo "000")"
+    if [ "$github_code" = "200" ] || [ "$github_code" = "301" ] || [ "$github_code" = "302" ]; then
+        log_success "https://raw.githubusercontent.com is now REACHABLE (HTTP ${github_code}) without SSL errors!"
+    fi
+
+    echo ""
+    read_user_input " Would you also like to configure Anti-Sanction DNS (Shecan / 403.online)? [y/N]: " set_dns
+    if [[ "$set_dns" =~ ^[Yy]$ ]]; then
+        if [ -f /etc/resolv.conf ]; then
+            cp /etc/resolv.conf "${BACKUP_DIR}/resolv.conf.bak_${timestamp}" 2>/dev/null || true
+            cat << 'EOF' > /etc/resolv.conf
+# Configured by Repo-Setter (Shecan & 403.online Anti-Sanction DNS)
+nameserver 178.22.122.100
+nameserver 185.51.200.2
+nameserver 10.202.10.202
+nameserver 8.8.8.8
+EOF
+            log_success "/etc/resolv.conf configured with Anti-Sanction DNS servers!"
+        fi
+    fi
+
+    pause_key
+}
+
+action_configure_docker_mirrors() {
+    if ! check_root; then
+        pause_key
+        return
+    fi
+
+    echo ""
+    log_info "=== Benchmarking Docker Hub Registry Mirrors for Iran ==="
+    echo -e " ${C_DIM}These mirrors bypass Docker Hub 403 Forbidden sanction blocks in Iran.${C_RESET}"
+    echo ""
+
+    local docker_mirrors=(
+        "ArvanCloud|https://docker.arvancloud.ir"
+        "Docker.ir|https://registry.docker.ir"
+        "DockerHub.ir|https://dockerhub.ir"
+        "MChost|https://docker.mchost.ir"
+        "IranRepo|https://docker.iranrepo.ir"
+        "Google Mirror|https://mirror.gcr.io"
+    )
+
+    local reachable_mirrors=()
+    for entry in "${docker_mirrors[@]}"; do
+        IFS="|" read -r dname durl <<< "$entry"
+        local probe_code
+        probe_code="$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 --max-time 5 "${durl}/v2/" 2>/dev/null || echo "000")"
+        if [ "$probe_code" = "200" ] || [ "$probe_code" = "401" ]; then
+            echo -e "   • ${C_GREEN}[PASS]${C_RESET} ${dname} (${durl})"
+            reachable_mirrors+=("$durl")
+        else
+            echo -e "   • ${C_RED}[FAIL]${C_RESET} ${dname} (${durl}) [HTTP ${probe_code}]"
+        fi
+    done
+
+    if [ ${#reachable_mirrors[@]} -eq 0 ]; then
+        log_warning "No Iranian registry responded directly. Using standard trusted fallbacks..."
+        reachable_mirrors=("https://docker.arvancloud.ir" "https://registry.docker.ir" "https://dockerhub.ir" "https://mirror.gcr.io")
+    fi
+
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    mkdir -p /etc/docker "$BACKUP_DIR"
+
+    if [ -f /etc/docker/daemon.json ]; then
+        cp /etc/docker/daemon.json "${BACKUP_DIR}/daemon.json.bak_${timestamp}"
+        log_info "Backup created: ${BACKUP_DIR}/daemon.json.bak_${timestamp}"
+    fi
+
+    local json_mirrors=""
+    for m in "${reachable_mirrors[@]}"; do
+        if [ -z "$json_mirrors" ]; then
+            json_mirrors="\"$m\""
+        else
+            json_mirrors="${json_mirrors},
+    \"$m\""
+        fi
+    done
+
+    cat << EOF > /etc/docker/daemon.json
+{
+  "registry-mirrors": [
+    ${json_mirrors}
+  ]
+}
+EOF
+    chmod 644 /etc/docker/daemon.json
+    log_success "/etc/docker/daemon.json configured with ${#reachable_mirrors[@]} registry mirror(s)!"
+
+    # Restart docker service if installed
+    if command -v systemctl &>/dev/null && systemctl is-active --quiet docker 2>/dev/null; then
+        log_info "Restarting Docker service..."
+        systemctl daemon-reload 2>/dev/null || true
+        if systemctl restart docker 2>/dev/null; then
+            log_success "Docker service restarted successfully!"
+        fi
+    else
+        log_info "Docker is not currently active. Settings will apply when Docker starts."
+    fi
+
+    pause_key
+}
+
+action_install_docker() {
+    if ! check_root; then
+        pause_key
+        return
+    fi
+
+    echo ""
+    log_info "=== Docker Installation & Iran Sanction-Bypass Setup ==="
+
+    # Step 1: Fix DNS and hosts
+    log_info "Step 1/3: Applying Anti-Censorship hosts mappings for get.docker.com..."
+    grep -v -E "(raw\.githubusercontent\.com|get\.docker\.com|download\.docker\.com|github\.com)" /etc/hosts > /tmp/hosts_clean 2>/dev/null || cat /etc/hosts > /tmp/hosts_clean
+    cat << 'EOF' >> /tmp/hosts_clean
+185.199.108.133 raw.githubusercontent.com
+140.82.121.3    github.com
+3.160.132.12    get.docker.com
+99.86.159.87    download.docker.com
+EOF
+    cp /tmp/hosts_clean /etc/hosts
+    rm -f /tmp/hosts_clean
+
+    # Step 2: Check if Docker is already installed
+    if command -v docker &>/dev/null; then
+        local current_ver
+        current_ver="$(docker --version 2>/dev/null || echo "installed")"
+        log_info "Docker is already installed: ${C_GREEN}${current_ver}${C_RESET}"
+        read_user_input " Do you want to reinstall or just configure Iran Registry Mirrors? [r=reinstall / M=mirrors only]: " d_choice
+        d_choice="${d_choice:-M}"
+        if [[ ! "$d_choice" =~ ^[Rr]$ ]]; then
+            action_configure_docker_mirrors
+            return
+        fi
+    fi
+
+    # Step 3: Install Docker via apt from server's fast repository mirror
+    log_info "Step 2/3: Installing Docker packages via apt from active mirror..."
+    apt-get update -qq || true
+    if apt-get install -y docker.io docker-compose-plugin containerd; then
+        log_success "Docker packages installed successfully!"
+    else
+        log_warning "apt install encountered an issue. Falling back to get.docker.com script..."
+        if curl -fsSL https://get.docker.com | bash; then
+            log_success "Docker installed via get.docker.com script!"
+        else
+            log_error "Failed to install Docker automatically. Please check your package manager."
+            pause_key
+            return 1
+        fi
+    fi
+
+    # Step 4: Configure Registry Mirrors
+    log_info "Step 3/3: Configuring Docker Hub Registry Mirrors in /etc/docker/daemon.json..."
+    mkdir -p /etc/docker
+    cat << 'EOF' > /etc/docker/daemon.json
+{
+  "registry-mirrors": [
+    "https://docker.arvancloud.ir",
+    "https://registry.docker.ir",
+    "https://dockerhub.ir",
+    "https://mirror.gcr.io"
+  ]
+}
+EOF
+    chmod 644 /etc/docker/daemon.json
+
+    # Step 5: Enable & restart service
+    if command -v systemctl &>/dev/null; then
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl enable --now docker 2>/dev/null || true
+        systemctl restart docker 2>/dev/null || true
+    fi
+
+    local final_ver
+    final_ver="$(docker --version 2>/dev/null || echo "Docker")"
+    echo ""
+    log_success "${final_ver} installed and enabled!"
+    log_success "Iran registry mirrors active. 'docker pull' is now sanction-free!"
+
+    pause_key
+}
+
 # ------------------------------------------------------------------------------
 # Interactive Menu
 # ------------------------------------------------------------------------------
@@ -900,14 +1150,19 @@ interactive_menu() {
         echo -e "   ${C_CYAN}[5]${C_RESET} Benchmark All (Iran & International) & Auto-Set Fastest"
         echo -e "   ${C_CYAN}[6]${C_RESET} Benchmark All & Choose from Combined List"
         echo ""
+        echo -e "  ${C_BOLD}${C_CYAN}─── DOCKER & DEVELOPER TOOLS (IRAN OPTIMIZED) ───${C_RESET}"
+        echo -e "   ${C_CYAN}[7]${C_RESET} Fix DNS Poisoning & SSL for get.docker.com & GitHub (/etc/hosts)"
+        echo -e "   ${C_CYAN}[8]${C_RESET} Install Docker CE & Tools (Sanction-Free for Iran)"
+        echo -e "   ${C_CYAN}[9]${C_RESET} Benchmark & Configure Docker Registry Mirrors (/etc/docker/daemon.json)"
+        echo ""
         echo -e "  ${C_BOLD}${C_YELLOW}─── MAINTENANCE & TOOLS ───${C_RESET}"
-        echo -e "   ${C_CYAN}[7]${C_RESET} View Current sources.list & Active Mirrors"
-        echo -e "   ${C_CYAN}[8]${C_RESET} Restore sources.list from Backup"
-        echo -e "   ${C_CYAN}[9]${C_RESET} Run 'apt-get update'"
+        echo -e "   ${C_CYAN}[10]${C_RESET} View Current sources.list & Active Mirrors"
+        echo -e "   ${C_CYAN}[11]${C_RESET} Restore sources.list from Backup"
+        echo -e "   ${C_CYAN}[12]${C_RESET} Run 'apt-get update'"
         echo ""
         echo -e "   ${C_RED}[0]${C_RESET} Exit"
         echo -e "  ─────────────────────────────────────────────────────────────────────────────"
-        read_user_input " Please select an option [0-9]: " opt
+        read_user_input " Please select an option [0-12]: " opt
 
         case "$opt" in
             1) action_auto_set_fastest "iran" ;;
@@ -916,9 +1171,12 @@ interactive_menu() {
             4) action_select_manually "international" ;;
             5) action_auto_set_fastest "all" ;;
             6) action_select_manually "all" ;;
-            7) action_view_current_sources ;;
-            8) action_restore_backup ;;
-            9) action_run_apt_update ;;
+            7) action_fix_dns_poisoning ;;
+            8) action_install_docker ;;
+            9) action_configure_docker_mirrors ;;
+            10) action_view_current_sources ;;
+            11) action_restore_backup ;;
+            12) action_run_apt_update ;;
             0)
                 echo ""
                 echo -e " ${C_GREEN}Goodbye!${C_RESET}"
@@ -926,7 +1184,7 @@ interactive_menu() {
                 exit 0
                 ;;
             *)
-                log_error "Invalid option '$opt'. Please enter a number between 0 and 9."
+                log_error "Invalid option '$opt'. Please enter a number between 0 and 12."
                 sleep 1.5
                 ;;
         esac
@@ -947,6 +1205,9 @@ Options:
   -i, --iran          Benchmark Iranian mirrors and auto-set the fastest
   -g, --global        Benchmark International mirrors and auto-set the fastest
   -a, --all           Benchmark All mirrors (Iran & Global) and auto-set fastest
+  -f, --fix-dns       Fix DNS poisoning & SSL (60) for get.docker.com and GitHub
+  -d, --docker        Install Docker CE & configure Iran registry mirrors
+  -m, --docker-mirrors Benchmark & configure Docker Hub registry mirrors
   -s, --status        View current active repository configuration
   -r, --restore       Restore sources.list from the most recent backup
   -u, --update        Run 'apt-get update'
@@ -960,7 +1221,8 @@ Interactive Mode:
 Examples:
   sudo ./repo-setter.sh               # Open interactive menu
   sudo ./repo-setter.sh --iran        # Auto-set fastest Iran mirror non-interactively
-  sudo ./repo-setter.sh --global      # Auto-set fastest international mirror
+  sudo ./repo-setter.sh --fix-dns     # Fix SSL error 60 for get.docker.com & GitHub
+  sudo ./repo-setter.sh --docker      # Install Docker with Iran registry mirrors
 EOF
 }
 
@@ -983,6 +1245,15 @@ main() {
                 ;;
             -a|--all)
                 action_auto_set_fastest "all"
+                ;;
+            -f|--fix-dns)
+                action_fix_dns_poisoning
+                ;;
+            -d|--docker)
+                action_install_docker
+                ;;
+            -m|--docker-mirrors)
+                action_configure_docker_mirrors
                 ;;
             -s|--status)
                 action_view_current_sources
