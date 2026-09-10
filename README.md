@@ -220,6 +220,30 @@ sudo ./repo-setter.sh --docker
 
 ---
 
+## 🛡️ Supported Anti-Sanction DNS Providers
+
+Option `[7]` (or `--test-dns`) tests each provider live against `https://get.docker.com` to benchmark latency and verify unblocking:
+
+| Provider | Primary IP | Secondary IP | Purpose / Target |
+| :--- | :--- | :--- | :--- |
+| **Shecan (شکن)** | `178.22.122.100` | `185.51.200.2` | General & Dev Anti-Sanction |
+| **403.online (سامانه ۴۰۳)** | `10.202.10.202` | `10.202.10.102` | Developers, Docker, Cloud & AI |
+| **Electro (الکترو)** | `78.157.42.100` | `78.157.42.101` | Gaming & Developer Tools |
+| **Radar Game (رادار)** | `10.202.10.10` | `10.202.10.11` | Low Latency & Anti-Sanction |
+| **Begzar (بگذر)** | `185.55.226.26` | `185.55.225.25` | Open Anti-Sanction Proxy |
+| **Shelter (شلتر)** | `185.86.136.241` | `185.86.136.242` | Developer & Server Anti-Sanction |
+| **Pishrun (پیشران)** | `5.202.100.100` | `5.202.100.101` | AI & Dev Anti-Sanction |
+| **Level 15 (لول ۱۵)** | `185.105.238.167` | `185.105.239.167` | Gaming & Developer Bypass |
+| **Hostiran (هاست‌ایران)** | `172.29.0.100` | `172.29.2.100` | Data Center & Dev Tools |
+| **Vanilla DNS (وانیلا)** | `10.202.10.100` | `10.202.10.101` | Anti-Sanction Bypass |
+| **NobarCloud (نوبر)** | `78.110.120.220` | `78.110.120.200` | Cloud & Infra Anti-Sanction |
+| **Beshkan (بشکن)** | `181.41.194.177` | `181.41.194.186` | Developer Anti-Sanction |
+| **DynX (داین‌ایکس)** | `193.24.103.1` | `193.24.103.2` | Anti-Sanction Resolver |
+| **Cloudflare** | `1.1.1.1` | `1.0.0.1` | Global Baseline |
+| **Google** | `8.8.8.8` | `8.8.4.4` | Global Baseline |
+
+---
+
 ## 🐧 Supported Linux Distributions
 
 | Distribution | Supported Versions / Codenames |

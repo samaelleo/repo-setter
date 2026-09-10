@@ -901,9 +901,16 @@ action_test_dns_for_docker() {
         "Electro (الکترو)|78.157.42.100|78.157.42.101"
         "Radar Game (رادار)|10.202.10.10|10.202.10.11"
         "Begzar (بگذر)|185.55.226.26|185.55.225.25"
-        "Shelter DNS|185.87.122.181|185.87.122.182"
-        "Cloudflare|1.1.1.1|1.0.0.1"
-        "Google|8.8.8.8|8.8.4.4"
+        "Shelter (شلتر)|185.86.136.241|185.86.136.242"
+        "Pishrun (پیشران)|5.202.100.100|5.202.100.101"
+        "Level 15 (لول ۱۵)|185.105.238.167|185.105.239.167"
+        "Hostiran (هاست‌ایران)|172.29.0.100|172.29.2.100"
+        "Vanilla (وانیلا)|10.202.10.100|10.202.10.101"
+        "NobarCloud (نوبر)|78.110.120.220|78.110.120.200"
+        "Beshkan (بشکن)|181.41.194.177|181.41.194.186"
+        "DynX (داین‌ایکس)|193.24.103.1|193.24.103.2"
+        "Cloudflare (Direct)|1.1.1.1|1.0.0.1"
+        "Google (Direct)|8.8.8.8|8.8.4.4"
     )
 
     local working_dns=()
@@ -929,13 +936,15 @@ EOF
         local start_ts
         start_ts="$(date +%s%N 2>/dev/null || date +%s)"
         local curl_out
-        curl_out="$(curl -s -L --connect-timeout 3 --max-time 6 https://get.docker.com 2>/dev/null)"
+        curl_out="$(curl -s -L --connect-timeout 2 --max-time 4 https://get.docker.com 2>/dev/null)"
         local end_ts
         end_ts="$(date +%s%N 2>/dev/null || date +%s)"
 
         local latency_ms="--"
+        local latency_num=99999
         if [ ${#start_ts} -gt 10 ] && [ ${#end_ts} -gt 10 ]; then
-            latency_ms="$(( (end_ts - start_ts) / 1000000 )) ms"
+            latency_num="$(( (end_ts - start_ts) / 1000000 ))"
+            latency_ms="${latency_num} ms"
         fi
 
         local first_line
@@ -947,7 +956,7 @@ EOF
         if [[ "$first_line" == *"#!/bin/sh"* ]] || [[ "$first_line" == *"#!"* ]]; then
             status_label="UNBLOCKED"
             status_color="${C_GREEN}"
-            working_dns+=("${pname}|${ip1}|${ip2}")
+            working_dns+=("${latency_num}|${pname}|${ip1}|${ip2}")
         elif [[ "$first_line" == *"<!"* ]] || [[ "$first_line" == *"403"* ]] || [[ "$curl_out" == *"Forbidden"* ]]; then
             status_label="SANCTIONED(403)"
             status_color="${C_RED}"
@@ -972,12 +981,15 @@ EOF
         return 1
     fi
 
-    log_success "Found ${#working_dns[@]} working DNS server(s) that successfully unblock get.docker.com!"
-    
-    local best_dns="${working_dns[0]}"
-    IFS="|" read -r bname bip1 bip2 <<< "$best_dns"
+    # Sort working DNS by latency (lowest first)
+    IFS=$'\n' read -d '' -r -a sorted_working < <(printf '%s\n' "${working_dns[@]}" | sort -n && printf '\0')
+    local best_dns="${sorted_working[0]}"
+    local blat
+    IFS="|" read -r blat bname bip1 bip2 <<< "$best_dns"
+
+    log_success "Found ${#sorted_working[@]} working DNS server(s) that successfully unblock get.docker.com!"
     echo ""
-    echo -e " ${C_BOLD}Best Working DNS:${C_RESET} ${C_GREEN}${bname}${C_RESET} (${bip1}, ${bip2})"
+    echo -e " ${C_BOLD}Fastest Working DNS:${C_RESET} ${C_GREEN}${bname}${C_RESET} (${bip1}, ${bip2}) [${blat} ms]"
     echo ""
 
     read_user_input " Set this DNS permanently in /etc/resolv.conf? [Y/n]: " set_perm
