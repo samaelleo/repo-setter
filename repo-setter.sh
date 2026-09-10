@@ -60,8 +60,16 @@ declare -a BENCHMARK_RESULTS=()
 # ------------------------------------------------------------------------------
 # Helper Functions: Logging & UI
 # ------------------------------------------------------------------------------
+FIRST_RUN=1
+
 print_banner() {
-    clear 2>/dev/null || true
+    if [ "${FIRST_RUN:-1}" -eq 1 ] && [ -t 1 ]; then
+        clear 2>/dev/null || true
+        FIRST_RUN=0
+    else
+        echo ""
+        echo -e "${C_DIM}─────────────────────────────────────────────────────────────────────────────${C_RESET}"
+    fi
     echo -e "${C_CYAN}${C_BOLD}"
     echo "  ██████╗ ███████╗██████╗  ██████╗      ███████╗███████╗████████╗████████╗███████╗██████╗ "
     echo "  ██╔══██╗██╔════╝██╔══██╗██╔═══██╗     ██╔════╝██╔════╝╚══██╔══╝╚══██╔══╝██╔════╝██╔══██╗"
@@ -97,12 +105,15 @@ read_user_input() {
     local input_val=""
     local read_rc=0
 
+    # Ensure prompt is written directly to stdout so it is always visible
+    if [ -n "$prompt" ]; then
+        echo -ne "$prompt"
+    fi
+
     if [ -c /dev/tty ]; then
-        read -r -p "$prompt" input_val < /dev/tty 2>/dev/null || read_rc=$?
-    elif [ -t 0 ]; then
-        read -r -p "$prompt" input_val || read_rc=$?
+        read -r input_val < /dev/tty || read_rc=$?
     else
-        read -r -p "$prompt" input_val 2>/dev/null || read_rc=$?
+        read -r input_val || read_rc=$?
     fi
 
     if [ "$read_rc" -ne 0 ]; then
@@ -120,7 +131,7 @@ read_user_input() {
 
 pause_key() {
     echo ""
-    read_user_input " Press [Enter] to continue..." _unused
+    read_user_input "  ${C_BOLD}${C_YELLOW}➔ Press [Enter] to continue...${C_RESET} " _unused
 }
 
 check_root() {
