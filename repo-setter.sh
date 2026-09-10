@@ -95,11 +95,20 @@ read_user_input() {
     local prompt="$1"
     local __var_name="$2"
     local input_val=""
+    local read_rc=0
 
     if [ -c /dev/tty ]; then
-        read -r -p "$prompt" input_val < /dev/tty 2>/dev/null || read -r -p "$prompt" input_val
+        read -r -p "$prompt" input_val < /dev/tty 2>/dev/null || read_rc=$?
+    elif [ -t 0 ]; then
+        read -r -p "$prompt" input_val || read_rc=$?
     else
-        read -r -p "$prompt" input_val
+        read -r -p "$prompt" input_val 2>/dev/null || read_rc=$?
+    fi
+
+    if [ "$read_rc" -ne 0 ]; then
+        echo ""
+        log_warning "End of input stream detected. Exiting..."
+        exit 0
     fi
 
     if [ -n "$__var_name" ]; then
@@ -920,6 +929,6 @@ main() {
     fi
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [ -z "${BASH_SOURCE[0]:-}" ] || [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     main "$@"
 fi
