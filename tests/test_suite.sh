@@ -84,6 +84,27 @@ test_ubuntu_sources_gen() {
 }
 
 # ------------------------------------------------------------------------------
+# Test 2.5: Ubuntu 24.04 deb822 generation
+# ------------------------------------------------------------------------------
+test_ubuntu_deb822_gen() {
+    echo -e "\n${C_BLUE}--- Testing Ubuntu deb822 Generation ---${C_RESET}"
+    local tmp_target
+    tmp_target="$(mktemp 2>/dev/null || echo "tmp_deb822_test.txt")"
+    OS_ARCH="x86_64"
+
+    generate_ubuntu_deb822_sources "http://mirror.iranserver.com/ubuntu/" "noble" "$tmp_target"
+    local content
+    content="$(cat "$tmp_target")"
+    rm -f "$tmp_target"
+
+    assert_contains "$content" "Types: deb" "deb822 Types: deb"
+    assert_contains "$content" "URIs: http://mirror.iranserver.com/ubuntu/" "deb822 URIs"
+    assert_contains "$content" "Suites: noble noble-updates noble-backports" "deb822 core suites"
+    assert_contains "$content" "Suites: noble-security" "deb822 security suite"
+    assert_contains "$content" "Components: main restricted universe multiverse" "deb822 components"
+}
+
+# ------------------------------------------------------------------------------
 # Test 3: Debian sources.list generation (Bookworm vs Bullseye vs Buster)
 # ------------------------------------------------------------------------------
 test_debian_sources_gen() {
@@ -161,6 +182,7 @@ test_mirror_lists() {
 main() {
     test_cli_flags
     test_ubuntu_sources_gen
+    test_ubuntu_deb822_gen
     test_debian_sources_gen
     test_live_probe
     test_mirror_lists
